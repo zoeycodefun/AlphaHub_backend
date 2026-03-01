@@ -1,0 +1,119 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# Build output
+dist/
+build/
+coverage/
+
+# Env files
+.env*
+.env.*
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.pid
+*.seed
+*.seed.*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test
+coverage/
+
+# Misc
+*.tgz
+*.bak
+*.tmp
+
+# Docker
+*.local
+.docker/
+
+# TypeORM migration logs
+ormconfig.js
+ormconfig.json
+ormconfig.ts
+
+# PM2
+pids/
+*.pid
+
+# Mac
+.AppleDouble
+.LSOverride
+
+# Others
+*.log.*
+
+# Python (如果有AI子模块)
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# VSCode Workspace
+*.code-workspace
+
+# Sentry
+.sentryclirc
+
+# Redis dump
+*.rdb
+
+# SSL certs
+*.pem
+*.key
+*.crt
+
+# Swagger
+swagger-stats.json
+swagger.json
+swagger.yaml
+
+# Jest
+.jest/
+
+# Prettier
+.prettier*
+
+# ESLint
+.eslint*
+
+# Pipenv
+Pipfile.lock
+
+# Pixi
+pixi.lock
+
+# Custom
+custom.env
+
+# Ignore personal plan
+/personal/
