@@ -5,18 +5,18 @@ import * as Joi from 'joi';
 
 // database configuration interface
 export interface DatabaseConfig {
-    type: 'postgre' | 'mysql'; // extendible
+    type: 'postgres' | 'mysql';
     host: string;
     port: number;
     username: string;
     password: string;
     database: string;
-    ssl: boolean;
+    ssl: boolean | object;
     poolSize: number;
     poolMaxIdleTime: number;
     poolMaxLifetime: number;
     synchronize: boolean; // auto synchronize entities with database schema, only for development
-    logging: boolean;
+    logging: boolean | string[];
     entities: string[]; // entity files path
     migrations: string[]; // migration files path
     subscribers: string[]; // subscriber files path
@@ -25,15 +25,24 @@ export interface DatabaseConfig {
 // Joi validation schema for database configuration(type and required fields)
 export const databaseConfigValidation = Joi.object({
     DATABASE_TYPE: Joi.string().valid('postgres', 'mysql').default('postgres'),
-    DATABASE_HOST: Joi.string().required(),
-    DATABASE_PORT: Joi.number().default(5432),
-    DATABASE_USERNAME: Joi.string().required(),
-    DATABASE_PASSWORD: Joi.string().required(),
-    DATABASE_NAME: Joi.string().required(),
+    DATABASE_HOST: Joi.string().hostname().required(),
+    DATABASE_PORT: Joi.number().integer().min(1000).max(65535).default(5432),
+    DATABASE_USERNAME: Joi.string().min(1).max(100).required(),
+    DATABASE_PASSWORD: Joi.string().min(1).required(),
+    DATABASE_NAME: Joi.string().min(1).max(100).required(),
     DATABASE_SSL: Joi.boolean().default(false),
-    DATABASE_POOL_SIZE: Joi.number().default(10),
-    DATABASE_POOL_MAX_IDLE_TIME: Joi.number().default(30000),
-    DATABASE_POOL_MAX_LIFETIME: Joi.number().default(600000),
+    DATABASE_SSL_CA: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
+    DATABASE_SSL_CERT: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
+    DATABASE_SSL_KEY: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
+    DATABASE_POOL_SIZE: Joi.number().integer().min(1).max(100).default(10),
+    DATABASE_POOL_MAX_IDLE_TIME: Joi.number().integer().min(1000).max(300000).default(30000),
+    DATABASE_POOL_MAX_LIFETIME: Joi.number().integer().min(60000).max(3600000).default(600000),
+    DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
+    REDIS_HOST: Joi.string().hostname().when('NODE_ENV', { is: 'production', then: Joi.required() }),
+    REDIS_PORT: Joi.number().integer().min(1000).max(65535).default(6379),
+    REDIS_PASSWORD: Joi.string(),
+    REDIS_DATABASE_NUMBER: Joi.number().integer().min(0).max(15).default(0),
+    REDIS_TTL: Joi.number().integer().min(60).max(86400).default(3600),
 });
 
 //
@@ -41,64 +50,80 @@ export default registerAs('database', (): TypeOrmModuleOptions & DatabaseConfig 
     const isProduction = process.env.NODE_ENV === 'production';
     const isDevelopment = process.env.NODE_ENV === 'development';
 
+    // helper function for safe integer parsing
+    const parseIntSafe = (value: string | undefined, defaultValue: number): number => {
+        if (!value) return defaultValue;
+        const parsed = parseInt(value, 10);
+        return isNaN(parsed) ? defaultValue : parsed;
+    };
+
+    // helper function for safe boolean parsing
+    const parseBoolSafe = (value: string | undefined, defaultValue: boolean): boolean => {
+        if (!value) return defaultValue;
+        return value.toLowerCase() === 'true';
+    };
+
     return {
         type: (process.env.DATABASE_TYPE as 'postgres') || 'postgres',
-        host: process.env.DATABASE_HOST,
-        port: parseInt(process.env.DATABASE_PORT, 10) || 5432,
-        username: process.env.DATABASE_USERNAME,
-        password: process.env.DATABASE_PASSWORD,
-        database: process.env.DATABASE_NAME,
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: parseIntSafe(process.env.DATABASE_PORT, 5432),
+        username: process.env.DATABASE_USERNAME || '',
+        password: process.env.DATABASE_PASSWORD || '',
+        database: process.env.DATABASE_NAME || '',
 
-        // SSL configuration(must open in production environment)
-        ssl: process.env.DATABASE_SSL === 'true' ? {
-            rejectUnauthorized: false, // ❌生产环境使用受信任的证书并将此项设置为生产模式为true
+        // SSL configuration - must be enabled in production for security
+        ssl: parseBoolSafe(process.env.DATABASE_SSL, false) ? {
+            rejectUnauthorized: isProduction, // production should use trusted certificates
             ca: process.env.DATABASE_SSL_CA,
             cert: process.env.DATABASE_SSL_CERT,
             key: process.env.DATABASE_SSL_KEY,
-        }: false,
+        } : false,
 
-        // connect pool configuration
+        // connection pool configuration
         extra: {
-            max: parseInt(process.env.DATABASE_POOL_SIZE,10) || 10,
+            max: parseIntSafe(process.env.DATABASE_POOL_SIZE, 10),
             min: 2,
-            idleTimeoutMillis: parseInt(process.env.DATABASE_POOL_MAX_IDLE_TIME, 10) || 30000, // max idle time before releasing connection
-            acquireTimeoutMillis: 60000, // acquire connection timeout time
-            evictCheckIntervalMillis: 10000, // clean spare connections interval time
-            handleTimeoutMillis: 60000, // handle timeout time
-            reapIntervalMillis: 1000, // recycle idle connections interval time
-            createTimeoutMillis: 30000, // create connection timeout time
-            destoryTimeoutMillis: 5000, // destroy connection timeout time
-            maxLifetime: parseInt(process.env.DATABASE_POOL_MAX_LIFETIME, 10) || 600000, // max lifetime of a connection
+            idleTimeoutMillis: parseIntSafe(process.env.DATABASE_POOL_MAX_IDLE_TIME, 30000),
+            acquireTimeoutMillis: 60000,
+            evictCheckIntervalMillis: 10000,
+            handleTimeoutMillis: 60000,
+            reapIntervalMillis: 1000,
+            createTimeoutMillis: 30000,
+            destroyTimeoutMillis: 5000,
+            maxLifetime: parseIntSafe(process.env.DATABASE_POOL_MAX_LIFETIME, 600000),
         },
         // entities, migrations, subscribers path configuration
         entities: ['dist/**/*.entity{.ts,.js'],
         migrations: ['dist/migrations/*{.ts,.js'],
         subscribers: ['dist/**/*.subscriber{.ts,.js'],
-
-        // auto synchronize entities with database schema, only for development environment, production environment must use migration to update database schema
-        synchronize: isDevelopment && process.env.DATABASE_SYNCHRONIZE !== 'false',
+        // additional DatabaseConfig interface properties
+        poolSize: parseIntSafe(process.env.DATABASE_POOL_SIZE, 10),
+        poolMaxIdleTime: parseIntSafe(process.env.DATABASE_POOL_MAX_IDLE_TIME, 30000),
+        poolMaxLifetime: parseIntSafe(process.env.DATABASE_POOL_MAX_LIFETIME, 600000),
+        // auto synchronize entities with database schema, only for development environment
+        synchronize: isDevelopment && parseBoolSafe(process.env.DATABASE_SYNCHRONIZE, false),
         
         // SQL logging configuration, only for development environment(production environment just return error logs)
         logging: isDevelopment ? ['query', 'error', 'warn'] : ['error'],
 
-        // redis configuration
+        // redis configuration for query result caching
         cache: {
             type: 'redis',
             options: {
-                host: process.env.REDIS_HOST,
-                port: parseInt(process.env.REDIS_PORT, 10),
+                host: process.env.REDIS_HOST || 'localhost',
+                port: parseIntSafe(process.env.REDIS_PORT, 6379),
                 password: process.env.REDIS_PASSWORD,
-                database: parseInt(process.env.REDIS_DATABASE_NUMBER, 10) || 0,
+                db: parseIntSafe(process.env.REDIS_DATABASE_NUMBER, 0),
             },
-            duration: parseInt(process.env.REDIS_TTL, 10) * 1000 || 3600000, // cache duration time in milliseconds
+            duration: parseIntSafe(process.env.REDIS_TTL, 3600) * 1000,
         },
-        // optimized params for production environment
+        // production environment optimizations and security settings
         ...(isProduction && {
-            dropSchema: false, // ❌生产环境禁止自动删除数据库表
-            synchronize: false, // ❌生产环境禁止自动同步数据库表结构，必须使用迁移文件更新数据库表结构
-            keepConnectionAlive: true, // 生产环境保持数据库连接，避免频繁连接和断开导致性能问题
-            retryAttempts: 5, // 连接失败重试次数
-            retryDelay: 3000, // 连接失败重试间隔时间
+            dropSchema: false, // never drop schema in production
+            synchronize: false, // never auto-sync in production, use migrations
+            keepConnectionAlive: true, // maintain persistent connections for performance
+            retryAttempts: 5, // connection retry attempts
+            retryDelay: 3000, // retry delay in milliseconds
         }),
     };
 });

@@ -49,5 +49,4 @@ export class DexAccountManagementEntity {
  * walletType supports different wallet types, e.g. metamask, trust wallet, etc.
  * permissions support specific permission, e.g. read-only, trading permission, etc.
  * no sensitive information collected, and no management of users' assets, all operations related to users' assets should be done on client side, and only interact with blockchain through users' wallet signature verification
- * ❌❌具体根据hyper liquid的连接要求调整参数
  */
