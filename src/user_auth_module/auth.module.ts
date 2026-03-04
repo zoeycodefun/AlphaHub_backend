@@ -85,6 +85,5 @@ interface JwtModuleConfig {
   ],
 })
 export class AuthModule {
-  // module class: can be extended with lifecycle hooks if needed
-  // currently minimal for focused authentication functionality
+  
 }
