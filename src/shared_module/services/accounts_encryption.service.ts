@@ -48,6 +48,25 @@ export class AccountsEncryptionService {
         saltRounds: 10000,
         tagLength: 16,
     };
-    // main master key
-    private 
+    // main master key(must get from environment variable for security)
+    private readonly masterKey: string;
+    /**
+     * constructor function
+     * initialization with encryption services, validate necessary environment variables and configuration
+     * 
+     * @param configService NestJS config service
+     * @throws Error if environment variables are missing or configuration is invalid
+     */
+    constructor(private readonly configService: ConfigService) {
+        // get master key from env
+        this.masterKey = this.configService.get<string>('ENCRYPTION_MASTER_KEY');
+        // validate master key enistence and length
+        if (!this.masterKey || this.masterKey.length < 32) {
+            throw new Error('ENCRYPTION_MASTER_KEY environment variable is required and must be at least 32 characters long');
+        }
+        this.logger.log('Accounts encryption service initialized successfully');
+    }
+    /**
+     * Encrypt API secret keys
+     */
 }
