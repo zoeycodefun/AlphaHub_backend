@@ -35,9 +35,9 @@ export class CexAccountResponseDto {
     exchangeDisplayName: string;
     
     @ApiProperty({
-        description: 'account type, e.g. spot, future, etc.',
+        description: 'account type, e.g. spot, futures, etc.',
         example: 'spot',
-        enum: ['spot', 'future']
+        enum: ['spot', 'futures']
     })
     @Expose()
     accountType: string;

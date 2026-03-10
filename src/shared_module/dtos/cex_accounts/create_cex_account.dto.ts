@@ -19,11 +19,11 @@ export class CreateCexAccountDto {
     exchange: string;
 
     @ApiProperty({
-        description: 'account type, e.g. spot, future, etc.',
+        description: 'account type, e.g. spot, futures, etc.',
         example: 'spot',
-        enum: ['spot', 'future']
+        enum: ['spot', 'futures']
     })
-    @IsEnum(['spot', 'future'], { message: 'account type must be either spot or future' })
+    @IsEnum(['spot', 'futures'], { message: 'account type must be either spot or futures' })
     accountType: string;
 
     @ApiProperty({

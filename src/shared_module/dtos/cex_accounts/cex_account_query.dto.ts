@@ -1,7 +1,8 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsString, IsEnum, IsBoolean, IsInt, Min, Max, IsDateString  } from "class-validator";
-import { Type, Transform } from "class-transformer";
-import { PaginationDto } from "../common/pagination.dto";
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsEnum, IsBoolean, IsDateString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PaginationDto } from '../common/pagination.dto';
+
 /**
  * CEX account query DTO
  * used for the verification and transformation of the input data when querying CEX accounts
@@ -28,10 +29,10 @@ export class CexAccountQueryDto extends PaginationDto {
     @ApiPropertyOptional({
         description: 'filtered by account type',
         example: 'spot',
-        enum: ['spot', 'future']
+        enum: ['spot', 'futures']
     })
     @IsOptional()
-    @IsEnum(['spot', 'future'], { message: 'account type must be either spot or future' })
+    @IsEnum(['spot', 'futures'], { message: 'account type must be either spot or futures' })
     accountType?: string;
     
     @ApiPropertyOptional({
