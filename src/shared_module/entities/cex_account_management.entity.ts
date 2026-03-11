@@ -120,7 +120,7 @@ export class CexAccountManagementEntity {
         comment: 'account permissions configuration, JSON array, e.g. ["trade", "read", "withdraw"]',
         default: '["read"]' 
     })
-    permissions: string;
+    permissions: string[];
 
     @ApiProperty({ description: 'if allow trade', example: true })
     @Column({ 
@@ -173,6 +173,16 @@ export class CexAccountManagementEntity {
         enum: ['healthy', 'warning', 'error', 'unknown']
     })
     healthStatus: string;
+
+    @ApiProperty({ description: 'the connection status of the CEX account', example: 'disconnected' })
+    @Column({
+        type: 'varchar',
+        length: 16,
+        default: 'disconnected',
+        comment: 'the connection status of the CEX account, e.g. connected, disconnected, connecting, error',
+        enum: ['connected', 'disconnected', 'connecting', 'error']
+    })
+    connectionStatus: string;
 
     @ApiProperty({ description: 'last used time', example: '2026-03-06T10:00:00Z' })
     @Column({
