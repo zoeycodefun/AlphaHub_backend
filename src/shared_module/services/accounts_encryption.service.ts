@@ -226,4 +226,17 @@ export class AccountsEncryptionService {
             keyLength: `${this.config.keyLength * 8} bits` // convert key length to bits for better readability
         };
     }
+
+    /**
+     * generate API key hash
+     * used for uniqueness checks and indexing, uses sha256
+     * @param apiKey raw API key string
+     */
+    async generateApiKeyHash(apiKey: string): Promise<string> {
+        if (!apiKey || typeof apiKey !== 'string') {
+            throw new Error('apiKey must be a non-empty string');
+        }
+        const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
+        return hash;
+    }
 }
