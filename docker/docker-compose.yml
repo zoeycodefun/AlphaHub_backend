@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: alphahub_postgres
+    env_file:
+      - ../.env
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-alphahub_user}
+      # In production environment, must use secrets or cloud provider's secret management service
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      POSTGRES_DB: ${DATABASE_NAME:-alphahub_database}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Production: use named volumes with backup strategy
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DATABASE_USER:-alphahub_user}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+    # Production: add resource limits
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      # Production: add restart policy
+      restart: unless-stopped
+
+    redis:
+      image: redis:7-alpine
+      container_name: alphahub_redis
+      # For security, always set a strong password in production
+      command: >
+        redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD:-}
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+      ports:
+        - "${REDIS_PORT:-6379}:6379"
+      volumes:
+        - redis_data:/data
+      healthcheck:
+        test: >
+          sh -c 'redis-cli
+          ${REDIS_PASSWORD:+--pass "${REDIS_PASSWORD}"}
+          ping | grep -q PONG
+          '
+        interval: 5s
+        timeout: 3s
+        retries: 5
+      deploy:
+        resources:
+          limits:
+            cpus: '0.5'
+            memory: 512M
+      restart: unless-stopped
+volumes:
+# In production, use external volume with backup strategy instead of local volumes
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
