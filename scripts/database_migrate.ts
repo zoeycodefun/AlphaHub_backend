@@ -4,7 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 // Security: load environment variables from .env file, but in production, use secrets or cloud provider's secret management service
 const envPath = path.resolve(__dirname, '../.env');
-if (fs.existsSync(envPath)) {
+if (!fs.existsSync(envPath)) {
     console.error(`❌ FATAL: .env file not found at ${envPath}`);
     process.exit(1);
 }
@@ -12,6 +12,8 @@ dotenv.config({ path: envPath });
 // Import migrations after loading env variables
 import { CreateCexAccountsTable1697100000000 } from "@/shared_module/database_migration/create_cex_accounts_table";
 import { CreateDexAccountsTable1697100001000 } from "@/shared_module/database_migration/create_dex_accounts_table";
+import { CreateCexAccountDto } from "@/shared_module/dtos/cex_accounts/create_cex_account.dto";
+import { CreatePlatformUserTable1697600000000 } from "@/shared_module/database_migration/create_platform_user_table";
 // Security: validate critical environment variables before proceeding
 const requiredEnvVars = [
     'DATABASE_HOST',
@@ -58,7 +60,8 @@ const AppDataSource = new DataSource({
     entities: [],
     migrations: [
         CreateCexAccountsTable1697100000000,
-        CreateDexAccountsTable1697100001000
+        CreateDexAccountsTable1697100001000,
+        CreatePlatformUserTable1697600000000
     ],
     migrationsTableName: 'typeorm_migrations',
     migrationsRun: false,
