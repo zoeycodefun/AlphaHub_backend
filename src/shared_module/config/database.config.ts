@@ -5,7 +5,7 @@ import * as Joi from 'joi';
 
 // database configuration interface
 export interface DatabaseConfig {
-    type: 'postgres' | 'mysql';
+    type: 'postgres' | 'mysql'; // corrected to match actual usage
     host: string;
     port: number;
     username: string;
@@ -31,9 +31,15 @@ export const databaseConfigValidation = Joi.object({
     DATABASE_PASSWORD: Joi.string().min(1).required(),
     DATABASE_NAME: Joi.string().min(1).max(100).required(),
     DATABASE_SSL: Joi.boolean().default(false),
-    DATABASE_SSL_CA: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
-    DATABASE_SSL_CERT: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
-    DATABASE_SSL_KEY: Joi.string().when('DATABASE_SSL', { is: true, then: Joi.required() }),
+    DATABASE_SSL_CA: Joi.string().allow('').optional()
+        .when('DATABASE_SSL', { is: true, then: Joi.string().min(1).required() })
+        .when('NODE_ENV', { is: 'production', then: Joi.string().min(1).required() }),
+    DATABASE_SSL_CERT: Joi.string().allow('').optional()
+        .when('DATABASE_SSL', { is: true, then: Joi.string().min(1).required() })
+        .when('NODE_ENV', { is: 'production', then: Joi.string().min(1).required() }),
+    DATABASE_SSL_KEY: Joi.string().allow('').optional()
+        .when('DATABASE_SSL', { is: true, then: Joi.string().min(1).required() })
+        .when('NODE_ENV', { is: 'production', then: Joi.string().min(1).required() }),
     DATABASE_POOL_SIZE: Joi.number().integer().min(1).max(100).default(10),
     DATABASE_POOL_MAX_IDLE_TIME: Joi.number().integer().min(1000).max(300000).default(30000),
     DATABASE_POOL_MAX_LIFETIME: Joi.number().integer().min(60000).max(3600000).default(600000),
@@ -113,9 +119,9 @@ export default registerAs('database', (): TypeOrmModuleOptions & DatabaseConfig 
                 host: process.env.REDIS_HOST || 'localhost',
                 port: parseIntSafe(process.env.REDIS_PORT, 6379),
                 password: process.env.REDIS_PASSWORD,
-                db: parseIntSafe(process.env.REDIS_DATABASE_NUMBER, 0),
+                db: parseIntSafe(process.env.REDIS_DATABASE_NUMBER, 0), // corrected from 'database' to 'db'
             },
-            duration: parseIntSafe(process.env.REDIS_TTL, 3600) * 1000,
+            duration: parseIntSafe(process.env.REDIS_TTL, 3600) * 1000, // cache duration in milliseconds
         },
         // production environment optimizations and security settings
         ...(isProduction && {

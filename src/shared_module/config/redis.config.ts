@@ -24,9 +24,10 @@ export interface RedisSentinel {
 export const redisConfigValidation = Joi.object({
     REDIS_HOST: Joi.string().hostname().required(), // must be valid hostname
     REDIS_PORT: Joi.number().integer().min(1000).max(65535).default(6379), // valid port range
-    REDIS_PASSWORD: Joi.string().min(1).max(256).optional(), // reasonable password length
+    REDIS_PASSWORD: Joi.string().allow('').optional().max(256)
+        .when('NODE_ENV', { is: 'production', then: Joi.string().min(1).required() }), // production requires password
     REDIS_DATABASE_NUMBER: Joi.number().integer().min(0).max(15).default(0), // Redis db range
-    REDIS_KEY_PREFIX: Joi.string().min(1).max(50).pattern(/^[a-zA-Z0-9_:]+$/).default('**'), // alphanumeric with colon
+    REDIS_KEY_PREFIX: Joi.string().min(1).max(50).pattern(/^[a-zA-Z0-9_:]+$/).default('alphahub:'), // alphanumeric with colon
     REDIS_TTL: Joi.number().integer().min(60).max(2592000).default(3600), // 1min to 30days in seconds
     REDIS_CLUSTER: Joi.boolean().default(false),
     REDIS_SENTINELS: Joi.string().when('REDIS_CLUSTER', {
@@ -94,7 +95,7 @@ export default registerAs('redis', (): RedisConfig => {
         port: parseIntSafe(process.env.REDIS_PORT, 6379),
         password: process.env.REDIS_PASSWORD || undefined,
         database: parseIntSafe(process.env.REDIS_DATABASE_NUMBER, 0),
-        keyPrefix: process.env.REDIS_KEY_PREFIX || '**',
+        keyPrefix: process.env.REDIS_KEY_PREFIX || 'alphahub:',
         ttl: parseIntSafe(process.env.REDIS_TTL, 3600),
         cluster: isClusterMode,
         sentinels: isClusterMode ? parseSentinelsSafe(process.env.REDIS_SENTINELS) : undefined,
