@@ -234,7 +234,8 @@ export class CexAccountsService {
         if (!account) {
             throw new NotFoundException('CEX account not found');
         }
-        await this.cexAccountRepository.softDelete(accountId);
+        account.deletedAt = new Date();
+        await this.cexAccountRepository.save(account);
         this.logger.log(`CEX account with ID ${accountId} soft deleted successfully for user ${userId}`);
     }
     /**
@@ -277,21 +278,40 @@ export class CexAccountsService {
                 throw new Error(`Unsupported exchange: ${account.exchange}`);
             }
 
-            const exchangeInstance = new (FinalExchangeClass as any)({
+            const standardOptions = {
                 apiKey,
                 secret: apiSecret,
                 ...(apiPassphrase && { password: apiPassphrase }),
                 enableRateLimit: true,
-                timeout: 15000,
+                timeout: Number(process.env.CEX_API_TIMEOUT_MS ?? 30000),
                 // use sandbox mode for test/demo environments
                 ...(account.accountEnvironment !== 'live' && { sandbox: true }),
                 // For futures markets on supported exchanges
                 ...(account.accountType === 'futures' ? { defaultType: 'future' } : {}),
-            });
+            };
 
-            // validate API key by fetching account balance
-            // this will throw an error if credentials are invalid
-            await exchangeInstance.fetchBalance();
+            const runFetchBalance = async () => {
+                const exchangeInstance = new (FinalExchangeClass as any)(standardOptions);
+                return exchangeInstance.fetchBalance();
+            };
+
+            let lastErrorMessage = '';
+            const maxAttempts = Number(process.env.CEX_API_RETRY_COUNT ?? 2);
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    await runFetchBalance();
+                    lastErrorMessage = '';
+                    break;
+                } catch (err) {
+                    lastErrorMessage = (err as Error).message || 'Unknown error';
+                    this.logger.warn(`CEX account ${accountId} connection test attempt ${attempt}/${maxAttempts} failed for user ${userId}: ${lastErrorMessage}`);
+                    if (attempt < maxAttempts) {
+                        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+                        continue;
+                    }
+                    throw new Error(lastErrorMessage);
+                }
+            }
 
             // update account status on success
             account.connectionStatus = 'connected';
