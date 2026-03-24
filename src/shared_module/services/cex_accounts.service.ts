@@ -1,13 +1,13 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource, In } from "typeorm";
+import { Repository, DataSource, In, Not, IsNull } from "typeorm";
 import { CexAccountManagementEntity } from "../entities/cex_account_management.entity";
 import { AccountsEncryptionService } from "./accounts_encryption.service";
 import { CreateCexAccountDto } from "../dtos/cex_accounts/create_cex_account.dto";
 import { UpdateCexAccountDto } from "../dtos/cex_accounts/update_cex_account.dto";
 import { CexAccountQueryDto } from "../dtos/cex_accounts/cex_account_query.dto";
 import { CexAccountListResponseDto, CexAccountResponseDto } from "../dtos/cex_accounts/cex_account_response.dto";
-import { query } from "winston";
+import * as ccxt from "ccxt";
 /**
  * CEX accounts management service
  * offer CEX accounts all services
@@ -32,18 +32,56 @@ export class CexAccountsService {
     async createCexAccount(userId: string, createDto: CreateCexAccountDto): Promise<CexAccountResponseDto> {
         this.logger.log(`Creating CEX account for user ${userId} on exchange ${createDto.exchange} with account type ${createDto.accountType}`);
 
-        // check if the user already exists
+        // normalize account type first, to keep 'future' and 'futures' compatible
+        const normalizedAccountType = createDto.accountType === 'future' ? 'futures' : createDto.accountType;
+
+        // check if the user already exists and is not soft deleted
         const existingAccount = await this.cexAccountRepository.findOne({
             where: {
                 userId,
                 exchange: createDto.exchange,
-                accountType: createDto.accountType,
+                accountType: normalizedAccountType,
                 accountEnvironment: createDto.accountEnvironment,
+                deletedAt: null,
             },
+            withDeleted: false,
         });
+
+        // allow recreate if previously soft deleted (restore path), otherwise conflict
         if (existingAccount) {
             throw new ConflictException('CEX account with the same exchange, account type and environment already exists for the user');
         }
+
+        // check if a soft-deleted account exists: restore it instead of new insert
+        const deletedAccount = await this.cexAccountRepository.findOne({
+            where: {
+                userId,
+                exchange: createDto.exchange,
+                accountType: normalizedAccountType,
+                accountEnvironment: createDto.accountEnvironment,
+                deletedAt: Not(IsNull()),
+            },
+            withDeleted: true,
+        });
+        if (deletedAccount) {
+            deletedAccount.accountName = createDto.accountName;
+            deletedAccount.apiKeyHash = await this.accountsEncryptionService.generateApiKeyHash(createDto.apiKey);
+            deletedAccount.encryptedApiKey = await this.accountsEncryptionService.encryptApiSecret(createDto.apiKey);
+            deletedAccount.encryptedApiSecret = await this.accountsEncryptionService.encryptApiSecret(createDto.apiSecret);
+            deletedAccount.encryptedApiPassphrase = createDto.apiPassphrase ? await this.accountsEncryptionService.encryptApiSecret(createDto.apiPassphrase) : null;
+            deletedAccount.permissions = createDto.permissions || ['read'];
+            deletedAccount.canTrade = createDto.allowTrade;
+            deletedAccount.canWithdraw = createDto.allowWithdraw;
+            deletedAccount.canTransfer = createDto.allowTransfer;
+            deletedAccount.configuration = createDto.additionalSettings;
+            deletedAccount.exchangeConfig = createDto.exchangeConfiguration;
+            deletedAccount.deletedAt = null;
+            deletedAccount.status = 'active';
+            deletedAccount.enabled = true;
+            const restoredAccount = await this.cexAccountRepository.save(deletedAccount);
+            return this.mapToResponseDto(restoredAccount);
+        }
+
         const encryptedApiKey = await this.accountsEncryptionService.encryptApiSecret(createDto.apiKey);
         const encryptedApiSecret = await this.accountsEncryptionService.encryptApiSecret(createDto.apiSecret);
         const encryptedApiPassphrase = createDto.apiPassphrase ? await this.accountsEncryptionService.encryptApiSecret(createDto.apiPassphrase) : null;
@@ -55,7 +93,7 @@ export class CexAccountsService {
             userId,
             exchange: createDto.exchange,
             exchangeDisplayName: this.getExchangeDisplayName(createDto.exchange),
-            accountType: createDto.accountType,
+            accountType: normalizedAccountType,
             accountEnvironment: createDto.accountEnvironment,
             accountName: createDto.accountName,
             apiKeyHash,
@@ -89,7 +127,8 @@ export class CexAccountsService {
             queryBuilder.andWhere('account.exchange = :exchange', { exchange: queryDto.exchange });
         }
         if (queryDto.accountType) {
-            queryBuilder.andWhere('account.accountType = :accountType', { accountType: queryDto.accountType });
+            const normalizedQueryAccountType = queryDto.accountType === 'future' ? 'futures' : queryDto.accountType;
+            queryBuilder.andWhere('account.accountType = :accountType', { accountType: normalizedQueryAccountType });
         }
         if (queryDto.accountEnvironment) {
             queryBuilder.andWhere('account.accountEnvironment = :accountEnvironment', { accountEnvironment: queryDto.accountEnvironment });
@@ -214,22 +253,66 @@ export class CexAccountsService {
         try {
             const apiKey = await this.accountsEncryptionService.decryptApiKey(account.encryptedApiKey);
             const apiSecret = await this.accountsEncryptionService.decryptApiKey(account.encryptedApiSecret);
-            // ❌ real API connection test,,实际的API测试连接
+            const apiPassphrase = account.encryptedApiPassphrase
+                ? await this.accountsEncryptionService.decryptApiKey(account.encryptedApiPassphrase)
+                : undefined;
+
+            // real API connection test using CCXT
+            const exchangeKey = String(account.exchange || '').trim().toLowerCase();
+            const normalizedExchangeKey = exchangeKey === 'future' ? 'futures' : exchangeKey;
+
+            const ExchangeClass = (ccxt as any)[normalizedExchangeKey] || (ccxt as any)[exchangeKey];
+            if (!ExchangeClass || typeof ExchangeClass !== 'function') {
+                // some ccxt builds use PascalCase class key
+                const pascalKey = normalizedExchangeKey.charAt(0).toUpperCase() + normalizedExchangeKey.slice(1);
+                const ExchangeClassPascal = (ccxt as any)[pascalKey];
+                if (ExchangeClassPascal && typeof ExchangeClassPascal === 'function') {
+                    // tslint:disable-next-line: no-any
+                    (ccxt as any)[normalizedExchangeKey] = ExchangeClassPascal;
+                }
+            }
+
+            const FinalExchangeClass = (ccxt as any)[normalizedExchangeKey] || (ccxt as any)[exchangeKey];
+            if (!FinalExchangeClass || typeof FinalExchangeClass !== 'function') {
+                throw new Error(`Unsupported exchange: ${account.exchange}`);
+            }
+
+            const exchangeInstance = new (FinalExchangeClass as any)({
+                apiKey,
+                secret: apiSecret,
+                ...(apiPassphrase && { password: apiPassphrase }),
+                enableRateLimit: true,
+                timeout: 15000,
+                // use sandbox mode for test/demo environments
+                ...(account.accountEnvironment !== 'live' && { sandbox: true }),
+                // For futures markets on supported exchanges
+                ...(account.accountType === 'futures' ? { defaultType: 'future' } : {}),
+            });
+
+            // validate API key by fetching account balance
+            // this will throw an error if credentials are invalid
+            await exchangeInstance.fetchBalance();
+
+            // update account status on success
             account.connectionStatus = 'connected';
             account.healthStatus = 'healthy';
             account.lastUsedAt = new Date();
             account.consecutiveFailures = 0;
 
             await this.cexAccountRepository.save(account);
+            this.logger.log(`✅CEX account ${accountId} connection test successful for user ${userId}`);
             return { success: true, message: 'Connection successful' };
         } catch (error) {
+            const errorMessage = (error as Error).message || 'Unknown error occurred';
+            this.logger.error(`❌CEX account ${accountId} connection test failed for user ${userId}: ${errorMessage}`);
+            
             account.connectionStatus = 'error';
             account.healthStatus = 'error';
             account.consecutiveFailures += 1;
             account.lastErrorAt = new Date();
-            account.lastErrorMessage = error.message;
+            account.lastErrorMessage = errorMessage;
             await this.cexAccountRepository.save(account);
-            return { success: false, message: `Connection failed: ${error.message}` };
+            return { success: false, message: `Connection failed: ${errorMessage}` };
         }
     }
     /**
