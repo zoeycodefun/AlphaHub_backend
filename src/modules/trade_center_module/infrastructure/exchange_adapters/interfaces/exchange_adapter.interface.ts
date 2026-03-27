@@ -83,8 +83,6 @@ export interface Position {
  * standardized open position(futures/perps)
  */
 export interface OpenPosition {
-    // 下单区：现货就不说了，合约有全仓逐仓，杠杆，市价限价委托，数量（USDT/百分比），可用，只减仓，止盈止损，可买，做多做空
-    // 考虑全面性
     symbol: string;
     side: 'long' | 'short';
     size: number;
